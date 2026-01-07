@@ -225,14 +225,14 @@ with col1:
     
     unrestricted_reserves = st.number_input(
         "Unrestricted Reserves (£)",
-        value=143000,
+        value=215000,
         step=1000,
         format="%d"
     )
     
     restricted_reserves = st.number_input(
         "Restricted Reserves (£)",
-        value=50000,
+        value=146500,
         step=1000,
         format="%d"
     )
