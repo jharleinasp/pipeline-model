@@ -10,10 +10,10 @@ st.set_page_config(page_title="Financial Pipeline Modelling Tool", layout="wide"
 if 'probabilities' not in st.session_state:
     st.session_state.probabilities = {
         'Secured income': 100,
-        'Proposals out for decision': 75,
-        'High likelihood projects in development': 55,
-        'Medium likelihood projects in development': 35,
-        'Ideas at development stage': 15
+        'Proposals out for decision': 50,
+        'High likelihood projects in development': 50,
+        'Medium likelihood projects in development': 50,
+        'Ideas at development stage': 50
     }
 
 if 'scenario' not in st.session_state:
@@ -27,24 +27,24 @@ st.markdown("*18-month scenario planning with staff cost recovery and reserve ma
 scenario_presets = {
     'conservative': {
         'Secured income': 100,
-        'Proposals out for decision': 75,
-        'High likelihood projects in development': 40,
-        'Medium likelihood projects in development': 0,
+        'Proposals out for decision': 30,
+        'High likelihood projects in development': 30,
+        'Medium likelihood projects in development': 20,
         'Ideas at development stage': 0
     },
     'realistic': {
         'Secured income': 100,
-        'Proposals out for decision': 75,
-        'High likelihood projects in development': 55,
+        'Proposals out for decision': 50,
+        'High likelihood projects in development': 50,
         'Medium likelihood projects in development': 30,
-        'Ideas at development stage': 0
+        'Ideas at development stage': 20
     },
     'optimistic': {
         'Secured income': 100,
-        'Proposals out for decision': 90,
-        'High likelihood projects in development': 70,
-        'Medium likelihood projects in development': 50,
-        'Ideas at development stage': 20
+        'Proposals out for decision': 60,
+        'High likelihood projects in development': 60,
+        'Medium likelihood projects in development': 60,
+        'Ideas at development stage': 30
     }
 }
 
@@ -244,7 +244,7 @@ with col1:
     
     fixed_staff_costs = st.number_input(
         "Fixed Staff Costs (£/month)",
-        value=45000,
+        value=49000,
         step=1000,
         format="%d",
         help="Total monthly salary bill"
