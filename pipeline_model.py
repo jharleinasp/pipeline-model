@@ -43,10 +43,10 @@ st.set_page_config(page_title="Financial Pipeline Modelling Tool", layout="wide"
 if 'probabilities' not in st.session_state:
     st.session_state.probabilities = {
         'Secured income': 100,
-        'Proposals out for decision': 50,
-        'High likelihood projects in development': 50,
-        'Medium likelihood projects in development': 50,
-        'Ideas at development stage': 50
+        'Proposals out for decision': 75,
+        'High likelihood projects in development': 55,
+        'Medium likelihood projects in development': 35,
+        'Ideas at development stage': 15
     }
 
 if 'scenario' not in st.session_state:
@@ -60,24 +60,24 @@ st.markdown("*18-month scenario planning with staff cost recovery and reserve ma
 scenario_presets = {
     'conservative': {
         'Secured income': 100,
-        'Proposals out for decision': 30,
-        'High likelihood projects in development': 30,
-        'Medium likelihood projects in development': 20,
+        'Proposals out for decision': 75,
+        'High likelihood projects in development': 40,
+        'Medium likelihood projects in development': 0,
         'Ideas at development stage': 0
     },
     'realistic': {
         'Secured income': 100,
-        'Proposals out for decision': 50,
-        'High likelihood projects in development': 50,
+        'Proposals out for decision': 75,
+        'High likelihood projects in development': 55,
         'Medium likelihood projects in development': 30,
-        'Ideas at development stage': 20
+        'Ideas at development stage': 0
     },
     'optimistic': {
         'Secured income': 100,
-        'Proposals out for decision': 60,
-        'High likelihood projects in development': 60,
-        'Medium likelihood projects in development': 60,
-        'Ideas at development stage': 30
+        'Proposals out for decision': 90,
+        'High likelihood projects in development': 70,
+        'Medium likelihood projects in development': 50,
+        'Ideas at development stage': 20
     }
 }
 
@@ -161,18 +161,21 @@ def get_month_label(month_index):
     
     return f"{month_names[month]}_{year}"
 
-def calculate_forecast(pipeline_data, probabilities, unrestricted, restricted, fixed_staff, fixed_backoffice):
+def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_funds_start, fixed_staff, fixed_backoffice):
     """Calculate 18-month financial forecast with staff cost recovery"""
     months = 18
     forecast = []
+    
+    # Calculate static restricted funds
+    restricted_funds = total_funds_start - unrestricted_start
     
     # Month 0 (Current)
     forecast.append({
         'month': 0,
         'monthLabel': 'Current',
-        'unrestrictedReserves': unrestricted,
-        'restrictedReserves': restricted,
-        'totalCash': unrestricted + restricted
+        'unrestrictedReserves': unrestricted_start,
+        'restrictedFunds': restricted_funds,
+        'totalFunds': total_funds_start
     })
     
     # Months 1-18
@@ -216,18 +219,13 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted, restricted, f
         
         # Get previous month's reserves
         prev_unrestricted = forecast[-1]['unrestrictedReserves']
-        prev_restricted = forecast[-1]['restrictedReserves']
         
-        # Apply reserve allocation rules
-        if net_position >= 0:
-            # Surplus: add to restricted reserves
-            new_unrestricted = prev_unrestricted
-            new_restricted = prev_restricted + net_position
-        else:
-            # Deficit: deduct from unrestricted reserves
-            deficit = abs(net_position)
-            new_unrestricted = prev_unrestricted - deficit
-            new_restricted = prev_restricted
+        # Apply simplified reserve rules
+        # Surplus or deficit both affect unrestricted reserves
+        new_unrestricted = prev_unrestricted + net_position
+        
+        # Total funds = unrestricted + static restricted funds
+        new_total_funds = new_unrestricted + restricted_funds
         
         forecast.append({
             'month': month,
@@ -243,8 +241,8 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted, restricted, f
             'costsFromContribution': costs_to_cover,
             'netPosition': net_position,
             'unrestrictedReserves': new_unrestricted,
-            'restrictedReserves': new_restricted,
-            'totalCash': new_unrestricted + new_restricted
+            'restrictedFunds': restricted_funds,
+            'totalFunds': new_total_funds
         })
     
     return pd.DataFrame(forecast)
@@ -258,19 +256,21 @@ with col1:
     
     unrestricted_reserves = st.number_input(
         "Unrestricted Reserves (£)",
-        value=215000,
+        value=205500,
         step=1000,
         format="%d"
     )
     
-    restricted_reserves = st.number_input(
-        "Restricted Reserves (£)",
-        value=146500,
+    total_funds = st.number_input(
+        "Total Funds (£)",
+        value=363600,
         step=1000,
-        format="%d"
+        format="%d",
+        help="Unrestricted reserves + Restricted funds held"
     )
     
-    st.markdown(f"**Total Cash Reserves:** £{(unrestricted_reserves + restricted_reserves):,.0f}")
+    restricted_funds = total_funds - unrestricted_reserves
+    st.markdown(f"**Restricted Funds Held:** £{restricted_funds:,.0f}")
     
     st.markdown("---")
     st.markdown("**Fixed Monthly Costs**")
@@ -385,7 +385,7 @@ if not pipeline_data.empty:
         pipeline_data,
         st.session_state.probabilities,
         unrestricted_reserves,
-        restricted_reserves,
+        total_funds,
         fixed_staff_costs,
         fixed_backoffice_costs
     )
@@ -394,8 +394,8 @@ if not pipeline_data.empty:
     min_unrestricted = forecast_df['unrestrictedReserves'].min()
     months_below_threshold = (forecast_df['unrestrictedReserves'] < threshold).sum()
     first_breach = forecast_df[forecast_df['unrestrictedReserves'] < threshold]['monthLabel'].iloc[0] if months_below_threshold > 0 else None
-    min_total_cash = forecast_df['totalCash'].min()
-    max_total_cash = forecast_df['totalCash'].max()
+    min_total_funds = forecast_df['totalFunds'].min()
+    max_total_funds = forecast_df['totalFunds'].max()
     is_at_risk = min_unrestricted < threshold
     
     # Calculate average staff recovery rate
@@ -428,9 +428,9 @@ if not pipeline_data.empty:
     
     with metric_col4:
         st.metric(
-            "Total Cash Range",
-            f"£{min_total_cash:,.0f}",
-            delta=f"to £{max_total_cash:,.0f}"
+            "Total Funds Range",
+            f"£{min_total_funds:,.0f}",
+            delta=f"to £{max_total_funds:,.0f}"
         )
     
     with metric_col5:
@@ -462,12 +462,12 @@ if not pipeline_data.empty:
         marker=dict(size=6)
     ))
     
-    # Add total cash line
+    # Add total funds line
     fig.add_trace(go.Scatter(
         x=forecast_df['monthLabel'],
-        y=forecast_df['totalCash'],
+        y=forecast_df['totalFunds'],
         mode='lines+markers',
-        name='Total Cash',
+        name='Total Funds',
         line=dict(color='#10b981', width=2, dash='dash'),
         marker=dict(size=4)
     ))
@@ -545,21 +545,21 @@ if not pipeline_data.empty:
         'monthLabel', 'totalIncome', 'projectStaffCosts', 'projectExpenses', 
         'projectContribution', 'staffRecovery', 'unrecoveredStaffCosts',
         'fixedBackOfficeCosts', 'costsFromContribution', 'netPosition',
-        'unrestrictedReserves', 'restrictedReserves', 'totalCash'
+        'unrestrictedReserves', 'restrictedFunds', 'totalFunds'
     ]].copy()
     
     display_df.columns = [
         'Month', 'Income', 'Project Staff', 'Project Expenses', 
         'Contribution', 'Staff Recovery', 'Unrecovered Staff',
         'Back Office', 'Costs from Contrib.', 'Net Position',
-        'Unrestricted', 'Restricted', 'Total Cash'
+        'Unrestricted', 'Restricted Funds', 'Total Funds'
     ]
     
     # Format currency columns
     currency_cols = ['Income', 'Project Staff', 'Project Expenses', 'Contribution',
                      'Staff Recovery', 'Unrecovered Staff', 'Back Office', 
                      'Costs from Contrib.', 'Net Position', 'Unrestricted', 
-                     'Restricted', 'Total Cash']
+                     'Restricted Funds', 'Total Funds']
     
     for col in currency_cols:
         display_df[col] = display_df[col].apply(lambda x: f"£{x:,.0f}")
@@ -587,17 +587,6 @@ Create a multi-sheet Excel (.xlsx) file where each sheet represents one opportun
 - **Row 5, starting Column B:** Staff cost values for each month
 - **Row 6, starting Column B:** Expense values for each month
 
-**Example Sheet:**
-```
-A                                      B         C         D
-1  Project Alpha
-2  Secured income
-3                                      Jan_2026  Feb_2026  Mar_2026
-4  Income                              50000     50000     50000
-5  Staff                               30000     30000     30000
-6  Expenses                            5000      5000      5000
-```
-
 **Valid Clusters:** 
 - Secured income
 - Proposals out for decision
@@ -607,10 +596,11 @@ A                                      B         C         D
 
 **How the Model Works:**
 1. Income comes in from pipeline opportunities
-2. Project staff costs directly recover/offset the fixed staff costs (£45,000/month)
+2. Project staff costs directly recover/offset the fixed staff costs (£49,000/month)
 3. Project expenses are deducted from income
 4. Contribution = Income - Staff - Expenses
 5. Unrecovered Staff + Back Office costs are covered from Contribution
-6. **Surplus** → Added to restricted reserves
-7. **Deficit** → Deducted from unrestricted reserves
+6. **Net Position** = Contribution - (Unrecovered Staff + Back Office)
+7. **Surplus or Deficit** → Added to or deducted from Unrestricted Reserves
+8. **Total Funds** = Unrestricted Reserves + Restricted Funds (£158,100 static)
 """)
