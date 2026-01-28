@@ -60,24 +60,24 @@ st.markdown("*18-month scenario planning with staff cost recovery and reserve ma
 scenario_presets = {
     'conservative': {
         'Secured income': 100,
-        'Proposals out for decision': 75,
-        'High likelihood projects in development': 40,
-        'Medium likelihood projects in development': 0,
-        'Ideas at development stage': 0
+        'Proposals out for decision': 45,
+        'High likelihood projects in development': 30,
+        'Medium likelihood projects in development': 15,
+        'Ideas at development stage': 5
     },
     'realistic': {
         'Secured income': 100,
-        'Proposals out for decision': 75,
-        'High likelihood projects in development': 55,
+        'Proposals out for decision': 65,
+        'High likelihood projects in development': 50,
         'Medium likelihood projects in development': 30,
-        'Ideas at development stage': 0
+        'Ideas at development stage': 15
     },
     'optimistic': {
         'Secured income': 100,
-        'Proposals out for decision': 90,
+        'Proposals out for decision': 85,
         'High likelihood projects in development': 70,
-        'Medium likelihood projects in development': 50,
-        'Ideas at development stage': 20
+        'Medium likelihood projects in development': 45,
+        'Ideas at development stage': 25
     }
 }
 
