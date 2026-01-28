@@ -204,18 +204,24 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
             total_project_staff += staff * probability
             total_project_expenses += expenses * probability
         
-        # Calculate contribution to overheads (from each project)
+        # Calculate contribution
         project_contribution = total_income - total_project_staff - total_project_expenses
         
         # Calculate staff cost recovery
         staff_recovery = total_project_staff
-        unrecovered_staff_costs = fixed_staff - staff_recovery
+        unrecovered_staff_costs = max(0, fixed_staff - staff_recovery)
         
-        # Calculate what needs to be covered from contribution
-        costs_to_cover = unrecovered_staff_costs + fixed_backoffice
+        # Use contribution to cover unrecovered staff costs first, then back office
+        remaining_after_staff = project_contribution - unrecovered_staff_costs
         
-        # Calculate net position (contribution vs costs to cover)
-        net_position = project_contribution - costs_to_cover
+        if remaining_after_staff >= fixed_backoffice:
+            # Can cover both - surplus is what's left
+            net_position = remaining_after_staff - fixed_backoffice
+            costs_to_cover = unrecovered_staff_costs + fixed_backoffice
+        else:
+            # Can't cover both - deficit is the shortfall
+            net_position = remaining_after_staff - fixed_backoffice  # This will be negative
+            costs_to_cover = unrecovered_staff_costs + fixed_backoffice
         
         # Get previous month's reserves
         prev_unrestricted = forecast[-1]['unrestrictedReserves']
