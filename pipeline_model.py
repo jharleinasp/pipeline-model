@@ -1,4 +1,40 @@
-import streamlit as st
+# Reserve deposits
+    with st.expander("💵 Reserve Deposits (up to 4)"):
+        st.markdown("**Add one-time deposits to unrestricted reserves:**")
+        reserve_deposits = []
+        
+        for i in range(4):
+            col_month, col_amount = st.columns(2)
+            
+            with col_month:
+                deposit_month = st.selectbox(
+                    f"Deposit {i+1} Month",
+                    options=['None'] + MONTH_LIST,
+                    key=f"deposit_month_{i}"
+                )
+            
+            if deposit_month != 'None':
+                with col_amount:
+                    deposit_amount = st.number_input(
+                        "Amount (£)",
+                        value=0,
+                        step=1000,
+                        format="%d",
+                        key=f"deposit_amount_{i}"
+                    )
+                
+                reserve_deposits.append({
+                    'month': deposit_month,
+                    'amount': deposit_amount
+                })
+    
+    # Special projects costs
+    st.markdown("---")
+    
+    enable_special_projects = st.checkbox(
+        "Enable Special Projects Costs",
+        value=False,
+        help=import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -43,14 +79,17 @@ st.set_page_config(page_title="Financial Pipeline Modelling Tool", layout="wide"
 if 'probabilities' not in st.session_state:
     st.session_state.probabilities = {
         'Secured income': 100,
-        'Proposals out for decision': 75,
-        'High likelihood projects in development': 55,
-        'Medium likelihood projects in development': 35,
+        'Proposals out for decision': 65,
+        'High likelihood projects in development': 50,
+        'Medium likelihood projects in development': 30,
         'Ideas at development stage': 15
     }
 
 if 'scenario' not in st.session_state:
     st.session_state.scenario = 'realistic'
+
+if 'opportunity_toggles' not in st.session_state:
+    st.session_state.opportunity_toggles = {}
 
 # Header
 st.title("Financial Pipeline Modelling Tool")
@@ -194,7 +233,8 @@ def get_fixed_costs_for_month(month_label, cost_changes):
     return applicable_costs
 
 def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_funds_start, 
-                      base_staff, base_backoffice, reserve_deposits, cost_changes, active_opportunities):
+                      base_staff, base_backoffice, reserve_deposits, cost_changes, active_opportunities,
+                      special_projects_costs):
     """Calculate 18-month financial forecast with staff cost recovery"""
     months = 18
     forecast = []
@@ -207,6 +247,7 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
         'month': 0,
         'monthLabel': 'Current',
         'unrestrictedReserves': unrestricted_start,
+        'unrestrictedAfterSpecial': unrestricted_start,
         'restrictedFunds': restricted_funds,
         'totalFunds': total_funds_start
     })
@@ -219,6 +260,13 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
         fixed_costs = get_fixed_costs_for_month(month_label, cost_changes)
         fixed_staff = fixed_costs['staff']
         fixed_backoffice = fixed_costs['backoffice']
+        
+        # Get special projects cost for this month
+        special_cost = 0
+        for sp in special_projects_costs:
+            if sp['month'] == month_label:
+                special_cost = sp['amount']
+                break
         
         # Initialize monthly totals
         total_income = 0
@@ -272,6 +320,9 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
         # Apply simplified reserve rules
         new_unrestricted = prev_unrestricted + net_position + deposit_this_month
         
+        # Calculate unrestricted after special projects
+        new_unrestricted_after_special = new_unrestricted - special_cost
+        
         # Total funds = unrestricted + static restricted funds
         new_total_funds = new_unrestricted + restricted_funds
         
@@ -289,7 +340,9 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
             'costsFromContribution': costs_to_cover,
             'netPosition': net_position,
             'reserveDeposit': deposit_this_month,
+            'specialProjectsCost': special_cost,
             'unrestrictedReserves': new_unrestricted,
+            'unrestrictedAfterSpecial': new_unrestricted_after_special,
             'restrictedFunds': restricted_funds,
             'totalFunds': new_total_funds
         })
