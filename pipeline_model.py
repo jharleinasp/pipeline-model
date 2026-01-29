@@ -1,40 +1,4 @@
-# Reserve deposits
-    with st.expander("💵 Reserve Deposits (up to 4)"):
-        st.markdown("**Add one-time deposits to unrestricted reserves:**")
-        reserve_deposits = []
-        
-        for i in range(4):
-            col_month, col_amount = st.columns(2)
-            
-            with col_month:
-                deposit_month = st.selectbox(
-                    f"Deposit {i+1} Month",
-                    options=['None'] + MONTH_LIST,
-                    key=f"deposit_month_{i}"
-                )
-            
-            if deposit_month != 'None':
-                with col_amount:
-                    deposit_amount = st.number_input(
-                        "Amount (£)",
-                        value=0,
-                        step=1000,
-                        format="%d",
-                        key=f"deposit_amount_{i}"
-                    )
-                
-                reserve_deposits.append({
-                    'month': deposit_month,
-                    'amount': deposit_amount
-                })
-    
-    # Special projects costs
-    st.markdown("---")
-    
-    enable_special_projects = st.checkbox(
-        "Enable Special Projects Costs",
-        value=False,
-        help=import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -465,6 +429,36 @@ with col1:
                     'amount': deposit_amount
                 })
     
+    # Special projects costs
+    st.markdown("---")
+    
+    enable_special_projects = st.checkbox(
+        "Enable Special Projects Costs",
+        value=False,
+        help="Add monthly costs for special projects (deducted from unrestricted reserves)"
+    )
+    
+    special_projects_costs = []
+    
+    if enable_special_projects:
+        with st.expander("🔧 Special Projects Costs (monthly)"):
+            st.markdown("**Specify additional monthly costs for special projects:**")
+            
+            for month_label in MONTH_LIST:
+                sp_cost = st.number_input(
+                    f"{month_label}",
+                    value=0,
+                    step=1000,
+                    format="%d",
+                    key=f"special_{month_label}"
+                )
+                
+                if sp_cost > 0:
+                    special_projects_costs.append({
+                        'month': month_label,
+                        'amount': sp_cost
+                    })
+    
     st.markdown("---")
     
     threshold = st.number_input(
@@ -566,7 +560,8 @@ if not pipeline_data.empty:
         base_fixed_backoffice_costs,
         reserve_deposits,
         cost_changes,
-        st.session_state.opportunity_toggles
+        st.session_state.opportunity_toggles,
+        special_projects_costs
     )
     
     # Calculate risk metrics
@@ -643,6 +638,17 @@ if not pipeline_data.empty:
         line=dict(color='#2563eb', width=3),
         marker=dict(size=6)
     ))
+    
+    # Add unrestricted after special projects line if enabled
+    if enable_special_projects:
+        fig.add_trace(go.Scatter(
+            x=forecast_df['monthLabel'],
+            y=forecast_df['unrestrictedAfterSpecial'],
+            mode='lines+markers',
+            name='Unrestricted After Special Projects',
+            line=dict(color='#f59e0b', width=2, dash='dot'),
+            marker=dict(size=4)
+        ))
     
     # Add total funds line
     fig.add_trace(go.Scatter(
@@ -727,27 +733,49 @@ if not pipeline_data.empty:
     # Prepare display dataframe
     display_df = forecast_df[forecast_df['month'] > 0].copy()
     
-    # Select and rename columns
-    display_df = display_df[[
-        'monthLabel', 'totalIncome', 'projectStaffCosts', 'projectExpenses', 
-        'projectContribution', 'staffRecovery', 'unrecoveredStaffCosts',
-        'fixedBackOfficeCosts', 'costsFromContribution', 'netPosition', 'reserveDeposit',
-        'unrestrictedReserves', 'restrictedFunds', 'totalFunds'
-    ]].copy()
-    
-    display_df.columns = [
-        'Month', 'Income', 'Project Staff', 'Project Expenses', 
-        'Contribution', 'Staff Recovery', 'Unrecovered Staff',
-        'Back Office', 'Costs from Contrib.', 'Net Position', 'Deposits',
-        'Unrestricted', 'Restricted Funds', 'Total Funds'
-    ]
+    # Select columns based on whether special projects is enabled
+    if enable_special_projects:
+        display_df = display_df[[
+            'monthLabel', 'totalIncome', 'projectStaffCosts', 'projectExpenses', 
+            'projectContribution', 'staffRecovery', 'unrecoveredStaffCosts',
+            'fixedBackOfficeCosts', 'costsFromContribution', 'netPosition', 'reserveDeposit',
+            'unrestrictedReserves', 'specialProjectsCost', 'unrestrictedAfterSpecial',
+            'restrictedFunds', 'totalFunds'
+        ]].copy()
+        
+        display_df.columns = [
+            'Month', 'Income', 'Project Staff', 'Project Expenses', 
+            'Contribution', 'Staff Recovery', 'Unrecovered Staff',
+            'Back Office', 'Costs from Contrib.', 'Net Position', 'Deposits',
+            'Unrestricted', 'Special Projects', 'Unres. After Special',
+            'Restricted Funds', 'Total Funds'
+        ]
+        
+        currency_cols = ['Income', 'Project Staff', 'Project Expenses', 'Contribution',
+                         'Staff Recovery', 'Unrecovered Staff', 'Back Office', 
+                         'Costs from Contrib.', 'Net Position', 'Deposits', 'Unrestricted',
+                         'Special Projects', 'Unres. After Special', 'Restricted Funds', 'Total Funds']
+    else:
+        display_df = display_df[[
+            'monthLabel', 'totalIncome', 'projectStaffCosts', 'projectExpenses', 
+            'projectContribution', 'staffRecovery', 'unrecoveredStaffCosts',
+            'fixedBackOfficeCosts', 'costsFromContribution', 'netPosition', 'reserveDeposit',
+            'unrestrictedReserves', 'restrictedFunds', 'totalFunds'
+        ]].copy()
+        
+        display_df.columns = [
+            'Month', 'Income', 'Project Staff', 'Project Expenses', 
+            'Contribution', 'Staff Recovery', 'Unrecovered Staff',
+            'Back Office', 'Costs from Contrib.', 'Net Position', 'Deposits',
+            'Unrestricted', 'Restricted Funds', 'Total Funds'
+        ]
+        
+        currency_cols = ['Income', 'Project Staff', 'Project Expenses', 'Contribution',
+                         'Staff Recovery', 'Unrecovered Staff', 'Back Office', 
+                         'Costs from Contrib.', 'Net Position', 'Deposits', 'Unrestricted', 
+                         'Restricted Funds', 'Total Funds']
     
     # Format currency columns
-    currency_cols = ['Income', 'Project Staff', 'Project Expenses', 'Contribution',
-                     'Staff Recovery', 'Unrecovered Staff', 'Back Office', 
-                     'Costs from Contrib.', 'Net Position', 'Deposits', 'Unrestricted', 
-                     'Restricted Funds', 'Total Funds']
-    
     for col in currency_cols:
         display_df[col] = display_df[col].apply(lambda x: f"£{x:,.0f}")
     
