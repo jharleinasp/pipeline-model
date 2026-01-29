@@ -81,6 +81,13 @@ scenario_presets = {
     }
 }
 
+# Month list for dropdowns
+MONTH_LIST = [
+    'Jan_2026', 'Feb_2026', 'Mar_2026', 'Apr_2026', 'May_2026', 'Jun_2026',
+    'Jul_2026', 'Aug_2026', 'Sep_2026', 'Oct_2026', 'Nov_2026', 'Dec_2026',
+    'Jan_2027', 'Feb_2027', 'Mar_2027', 'Apr_2027', 'May_2027', 'Jun_2027'
+]
+
 def parse_excel_pipeline(excel_file):
     """Parse multi-sheet Excel file with opportunities"""
     all_opportunities = []
@@ -161,7 +168,33 @@ def get_month_label(month_index):
     
     return f"{month_names[month]}_{year}"
 
-def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_funds_start, fixed_staff, fixed_backoffice):
+def get_month_index(month_label):
+    """Convert month label like Jan_2026 to index (1-18)"""
+    try:
+        return MONTH_LIST.index(month_label) + 1
+    except ValueError:
+        return 0
+
+def get_fixed_costs_for_month(month_label, cost_changes):
+    """Get the applicable fixed costs for a given month based on cost changes"""
+    month_idx = get_month_index(month_label)
+    
+    # Sort cost changes by month index
+    sorted_changes = sorted(cost_changes, key=lambda x: get_month_index(x['month']))
+    
+    # Find the most recent cost change that applies to this month
+    applicable_costs = {'staff': 49000, 'backoffice': 12000}  # defaults
+    
+    for change in sorted_changes:
+        change_idx = get_month_index(change['month'])
+        if change_idx > 0 and change_idx <= month_idx:
+            applicable_costs['staff'] = change['staff']
+            applicable_costs['backoffice'] = change['backoffice']
+    
+    return applicable_costs
+
+def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_funds_start, 
+                      base_staff, base_backoffice, reserve_deposits, cost_changes, active_opportunities):
     """Calculate 18-month financial forecast with staff cost recovery"""
     months = 18
     forecast = []
@@ -182,13 +215,24 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
     for month in range(1, months + 1):
         month_label = get_month_label(month)
         
+        # Get applicable fixed costs for this month
+        fixed_costs = get_fixed_costs_for_month(month_label, cost_changes)
+        fixed_staff = fixed_costs['staff']
+        fixed_backoffice = fixed_costs['backoffice']
+        
         # Initialize monthly totals
         total_income = 0
         total_project_staff = 0
         total_project_expenses = 0
         
-        # Calculate weighted values from pipeline
+        # Calculate weighted values from pipeline (only for active opportunities)
         for _, opp in pipeline_data.iterrows():
+            opp_name = opp['opportunity_name']
+            
+            # Skip if opportunity is toggled off
+            if opp_name not in active_opportunities or not active_opportunities[opp_name]:
+                continue
+            
             cluster = opp.get('cluster', '')
             probability = probabilities.get(cluster, 0) / 100
             
@@ -213,22 +257,20 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
         
         # Use contribution to cover unrecovered staff costs first, then back office
         remaining_after_staff = project_contribution - unrecovered_staff_costs
-        
-        if remaining_after_staff >= fixed_backoffice:
-            # Can cover both - surplus is what's left
-            net_position = remaining_after_staff - fixed_backoffice
-            costs_to_cover = unrecovered_staff_costs + fixed_backoffice
-        else:
-            # Can't cover both - deficit is the shortfall
-            net_position = remaining_after_staff - fixed_backoffice  # This will be negative
-            costs_to_cover = unrecovered_staff_costs + fixed_backoffice
+        net_position = remaining_after_staff - fixed_backoffice
+        costs_to_cover = unrecovered_staff_costs + fixed_backoffice
         
         # Get previous month's reserves
         prev_unrestricted = forecast[-1]['unrestrictedReserves']
         
+        # Check for reserve deposits this month
+        deposit_this_month = 0
+        for deposit in reserve_deposits:
+            if deposit['month'] == month_label and deposit['amount'] > 0:
+                deposit_this_month += deposit['amount']
+        
         # Apply simplified reserve rules
-        # Surplus or deficit both affect unrestricted reserves
-        new_unrestricted = prev_unrestricted + net_position
+        new_unrestricted = prev_unrestricted + net_position + deposit_this_month
         
         # Total funds = unrestricted + static restricted funds
         new_total_funds = new_unrestricted + restricted_funds
@@ -246,6 +288,7 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
             'fixedBackOfficeCosts': fixed_backoffice,
             'costsFromContribution': costs_to_cover,
             'netPosition': net_position,
+            'reserveDeposit': deposit_this_month,
             'unrestrictedReserves': new_unrestricted,
             'restrictedFunds': restricted_funds,
             'totalFunds': new_total_funds
@@ -279,25 +322,95 @@ with col1:
     st.markdown(f"**Restricted Funds Held:** £{restricted_funds:,.0f}")
     
     st.markdown("---")
-    st.markdown("**Fixed Monthly Costs**")
+    st.markdown("**Base Fixed Monthly Costs**")
     
-    fixed_staff_costs = st.number_input(
+    base_fixed_staff_costs = st.number_input(
         "Fixed Staff Costs (£/month)",
         value=49000,
         step=1000,
         format="%d",
-        help="Total monthly salary bill"
+        help="Base monthly salary bill"
     )
     
-    fixed_backoffice_costs = st.number_input(
+    base_fixed_backoffice_costs = st.number_input(
         "Fixed Back Office Costs (£/month)",
         value=12000,
         step=1000,
         format="%d",
-        help="Monthly overhead costs"
+        help="Base monthly overhead costs"
     )
     
-    st.markdown(f"**Total Fixed Costs:** £{(fixed_staff_costs + fixed_backoffice_costs):,.0f}/month")
+    st.markdown(f"**Total Base Fixed Costs:** £{(base_fixed_staff_costs + base_fixed_backoffice_costs):,.0f}/month")
+    
+    # Cost changes
+    with st.expander("💰 Fixed Cost Changes (up to 4)"):
+        st.markdown("**Specify changes to fixed costs from specific months:**")
+        cost_changes = []
+        
+        for i in range(4):
+            col_month, col_staff, col_office = st.columns(3)
+            
+            with col_month:
+                change_month = st.selectbox(
+                    f"Month {i+1}",
+                    options=['None'] + MONTH_LIST,
+                    key=f"cost_month_{i}"
+                )
+            
+            if change_month != 'None':
+                with col_staff:
+                    new_staff = st.number_input(
+                        "Staff (£)",
+                        value=base_fixed_staff_costs,
+                        step=1000,
+                        format="%d",
+                        key=f"cost_staff_{i}"
+                    )
+                
+                with col_office:
+                    new_office = st.number_input(
+                        "Back Office (£)",
+                        value=base_fixed_backoffice_costs,
+                        step=1000,
+                        format="%d",
+                        key=f"cost_office_{i}"
+                    )
+                
+                cost_changes.append({
+                    'month': change_month,
+                    'staff': new_staff,
+                    'backoffice': new_office
+                })
+    
+    # Reserve deposits
+    with st.expander("💵 Reserve Deposits (up to 4)"):
+        st.markdown("**Add one-time deposits to unrestricted reserves:**")
+        reserve_deposits = []
+        
+        for i in range(4):
+            col_month, col_amount = st.columns(2)
+            
+            with col_month:
+                deposit_month = st.selectbox(
+                    f"Deposit {i+1} Month",
+                    options=['None'] + MONTH_LIST,
+                    key=f"deposit_month_{i}"
+                )
+            
+            if deposit_month != 'None':
+                with col_amount:
+                    deposit_amount = st.number_input(
+                        "Amount (£)",
+                        value=0,
+                        step=1000,
+                        format="%d",
+                        key=f"deposit_amount_{i}"
+                    )
+                
+                reserve_deposits.append({
+                    'month': deposit_month,
+                    'amount': deposit_amount
+                })
     
     st.markdown("---")
     
@@ -320,29 +433,33 @@ with col2:
             pipeline_data = parse_excel_pipeline(uploaded_file)
             st.success(f"✓ {len(pipeline_data)} opportunities loaded")
             
+            # Initialize toggles for new opportunities
+            for _, opp in pipeline_data.iterrows():
+                opp_name = opp['opportunity_name']
+                if opp_name not in st.session_state.opportunity_toggles:
+                    st.session_state.opportunity_toggles[opp_name] = True
+            
+            # Opportunity toggles
+            with st.expander("🎯 Toggle Opportunities"):
+                st.markdown("**Select which opportunities to include in the model:**")
+                for _, opp in pipeline_data.iterrows():
+                    opp_name = opp['opportunity_name']
+                    cluster = opp['cluster']
+                    
+                    st.session_state.opportunity_toggles[opp_name] = st.checkbox(
+                        f"{opp_name} ({cluster})",
+                        value=st.session_state.opportunity_toggles.get(opp_name, True),
+                        key=f"toggle_{opp_name}"
+                    )
+            
             # Show opportunity names
             with st.expander("View loaded opportunities"):
                 for _, opp in pipeline_data.iterrows():
-                    st.write(f"• **{opp['opportunity_name']}** ({opp['cluster']})")
+                    status = "✓" if st.session_state.opportunity_toggles.get(opp['opportunity_name'], True) else "✗"
+                    st.write(f"{status} **{opp['opportunity_name']}** ({opp['cluster']})")
             
-            # Debug: Show what data was actually read
-            with st.expander("🔍 Debug: View raw data structure"):
-                st.write("**Column names found:**")
-                cols_to_show = [col for col in pipeline_data.columns if '_income' in col or '_staff' in col or '_expenses' in col]
-                st.write(cols_to_show[:10])  # Show first 10 columns
-                
-                st.write("**First opportunity sample data:**")
-                if len(pipeline_data) > 0:
-                    first_opp = pipeline_data.iloc[0]
-                    sample_data = {}
-                    for col in cols_to_show[:6]:  # Show first 6 months
-                        sample_data[col] = first_opp.get(col, 'NOT FOUND')
-                    st.json(sample_data)
         except Exception as e:
             st.error(f"Error reading Excel file: {str(e)}")
-            st.error(f"Full error: {repr(e)}")
-            import traceback
-            st.code(traceback.format_exc())
             pipeline_data = pd.DataFrame()
     else:
         pipeline_data = pd.DataFrame()
@@ -392,8 +509,11 @@ if not pipeline_data.empty:
         st.session_state.probabilities,
         unrestricted_reserves,
         total_funds,
-        fixed_staff_costs,
-        fixed_backoffice_costs
+        base_fixed_staff_costs,
+        base_fixed_backoffice_costs,
+        reserve_deposits,
+        cost_changes,
+        st.session_state.opportunity_toggles
     )
     
     # Calculate risk metrics
@@ -404,9 +524,12 @@ if not pipeline_data.empty:
     max_total_funds = forecast_df['totalFunds'].max()
     is_at_risk = min_unrestricted < threshold
     
-    # Calculate average staff recovery rate
+    # Calculate average staff recovery rate (excluding month 0)
     avg_staff_recovery = forecast_df[forecast_df['month'] > 0]['staffRecovery'].mean()
-    avg_staff_recovery_pct = (avg_staff_recovery / fixed_staff_costs * 100) if fixed_staff_costs > 0 else 0
+    
+    # Get average of fixed staff costs across all months
+    avg_fixed_staff = forecast_df[forecast_df['month'] > 0]['fixedStaffCosts'].mean()
+    avg_staff_recovery_pct = (avg_staff_recovery / avg_fixed_staff * 100) if avg_fixed_staff > 0 else 0
     
     # Risk Metrics Dashboard
     st.markdown("---")
@@ -520,13 +643,18 @@ if not pipeline_data.empty:
         marker_color='#ef4444'
     ))
     
-    fig2.add_hline(
-        y=fixed_staff_costs,
-        line_dash="dash",
-        line_color="gray",
-        annotation_text=f"Total Staff Costs (£{fixed_staff_costs:,.0f})",
-        annotation_position="right"
-    )
+    # Add lines showing when fixed staff costs change
+    prev_staff_cost = None
+    for _, row in recovery_df.iterrows():
+        if prev_staff_cost is not None and row['fixedStaffCosts'] != prev_staff_cost:
+            fig2.add_vline(
+                x=row['monthLabel'],
+                line_dash="dot",
+                line_color="purple",
+                annotation_text=f"Cost change to £{row['fixedStaffCosts']:,.0f}",
+                annotation_position="top"
+            )
+        prev_staff_cost = row['fixedStaffCosts']
     
     fig2.update_layout(
         barmode='stack',
@@ -550,21 +678,21 @@ if not pipeline_data.empty:
     display_df = display_df[[
         'monthLabel', 'totalIncome', 'projectStaffCosts', 'projectExpenses', 
         'projectContribution', 'staffRecovery', 'unrecoveredStaffCosts',
-        'fixedBackOfficeCosts', 'costsFromContribution', 'netPosition',
+        'fixedBackOfficeCosts', 'costsFromContribution', 'netPosition', 'reserveDeposit',
         'unrestrictedReserves', 'restrictedFunds', 'totalFunds'
     ]].copy()
     
     display_df.columns = [
         'Month', 'Income', 'Project Staff', 'Project Expenses', 
         'Contribution', 'Staff Recovery', 'Unrecovered Staff',
-        'Back Office', 'Costs from Contrib.', 'Net Position',
+        'Back Office', 'Costs from Contrib.', 'Net Position', 'Deposits',
         'Unrestricted', 'Restricted Funds', 'Total Funds'
     ]
     
     # Format currency columns
     currency_cols = ['Income', 'Project Staff', 'Project Expenses', 'Contribution',
                      'Staff Recovery', 'Unrecovered Staff', 'Back Office', 
-                     'Costs from Contrib.', 'Net Position', 'Unrestricted', 
+                     'Costs from Contrib.', 'Net Position', 'Deposits', 'Unrestricted', 
                      'Restricted Funds', 'Total Funds']
     
     for col in currency_cols:
@@ -600,13 +728,8 @@ Create a multi-sheet Excel (.xlsx) file where each sheet represents one opportun
 - Medium likelihood projects in development
 - Ideas at development stage
 
-**How the Model Works:**
-1. Income comes in from pipeline opportunities
-2. Project staff costs directly recover/offset the fixed staff costs (£49,000/month)
-3. Project expenses are deducted from income
-4. Contribution = Income - Staff - Expenses
-5. Unrecovered Staff + Back Office costs are covered from Contribution
-6. **Net Position** = Contribution - (Unrecovered Staff + Back Office)
-7. **Surplus or Deficit** → Added to or deducted from Unrestricted Reserves
-8. **Total Funds** = Unrestricted Reserves + Restricted Funds (£158,100 static)
+**New Features:**
+- **Toggle Opportunities:** Turn individual projects on/off in the model
+- **Reserve Deposits:** Add up to 4 one-time deposits to unrestricted reserves
+- **Cost Changes:** Specify up to 4 changes to fixed costs throughout the forecast period
 """)
