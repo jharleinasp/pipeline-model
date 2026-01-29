@@ -686,7 +686,7 @@ if not pipeline_data.empty:
     fig2 = go.Figure()
     
     # Filter out month 0
-    recovery_df = forecast_df[forecast_df['month'] > 0]
+    recovery_df = forecast_df[forecast_df['month'] > 0].copy()
     
     fig2.add_trace(go.Bar(
         x=recovery_df['monthLabel'],
@@ -702,18 +702,23 @@ if not pipeline_data.empty:
         marker_color='#ef4444'
     ))
     
-    # Add lines showing when fixed staff costs change
+    # Add annotations showing when fixed staff costs change
     prev_staff_cost = None
-    for _, row in recovery_df.iterrows():
-        if prev_staff_cost is not None and row['fixedStaffCosts'] != prev_staff_cost:
-            fig2.add_vline(
-                x=row['monthLabel'],
-                line_dash="dot",
-                line_color="purple",
-                annotation_text=f"Cost change to £{row['fixedStaffCosts']:,.0f}",
-                annotation_position="top"
-            )
-        prev_staff_cost = row['fixedStaffCosts']
+    annotations = []
+    for idx, row in recovery_df.iterrows():
+        current_staff_cost = float(row['fixedStaffCosts'])
+        if prev_staff_cost is not None and current_staff_cost != prev_staff_cost:
+            annotations.append({
+                'x': row['monthLabel'],
+                'y': current_staff_cost,
+                'text': f"Cost change to £{current_staff_cost:,.0f}",
+                'showarrow': True,
+                'arrowhead': 2,
+                'ax': 0,
+                'ay': -40,
+                'font': {'color': 'purple', 'size': 10}
+            })
+        prev_staff_cost = current_staff_cost
     
     fig2.update_layout(
         barmode='stack',
@@ -721,7 +726,8 @@ if not pipeline_data.empty:
         xaxis_title="Month",
         yaxis_title="Amount (£)",
         hovermode='x unified',
-        yaxis=dict(tickformat='£,.0f')
+        yaxis=dict(tickformat='£,.0f'),
+        annotations=annotations
     )
     
     st.plotly_chart(fig2, use_container_width=True)
