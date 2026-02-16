@@ -43,6 +43,8 @@ st.set_page_config(page_title="Financial Pipeline Modelling Tool", layout="wide"
 if 'probabilities' not in st.session_state:
     st.session_state.probabilities = {
         'Secured income': 100,
+        'Contracting': 100,
+        'Negotiating': 90,
         'Proposals out for decision': 65,
         'High likelihood projects in development': 50,
         'Medium likelihood projects in development': 30,
@@ -63,6 +65,8 @@ st.markdown("*18-month scenario planning with staff cost recovery and reserve ma
 scenario_presets = {
     'conservative': {
         'Secured income': 100,
+        'Contracting': 100,
+        'Negotiating': 90,
         'Proposals out for decision': 45,
         'High likelihood projects in development': 30,
         'Medium likelihood projects in development': 15,
@@ -70,6 +74,8 @@ scenario_presets = {
     },
     'realistic': {
         'Secured income': 100,
+        'Contracting': 100,
+        'Negotiating': 90,
         'Proposals out for decision': 65,
         'High likelihood projects in development': 50,
         'Medium likelihood projects in development': 30,
@@ -77,6 +83,8 @@ scenario_presets = {
     },
     'optimistic': {
         'Secured income': 100,
+        'Contracting': 100,
+        'Negotiating': 90,
         'Proposals out for decision': 85,
         'High likelihood projects in development': 70,
         'Medium likelihood projects in development': 45,
@@ -160,6 +168,65 @@ def parse_excel_pipeline(excel_file):
         all_opportunities.append(opp_data)
     
     return pd.DataFrame(all_opportunities)
+
+def calculate_pipeline_funnel(pipeline_data, probabilities, active_opportunities, months_filter):
+    """Calculate pipeline funnel values for visualization"""
+    
+    # Determine which months to include based on filter
+    if months_filter == 6:
+        month_range = MONTH_LIST[:6]
+    elif months_filter == 12:
+        month_range = MONTH_LIST[:12]
+    else:  # 18 months
+        month_range = MONTH_LIST
+    
+    # Define funnel stages and their cluster mappings
+    funnel_stages = {
+        'All Opportunities': ['Ideas at development stage', 'Medium likelihood projects in development', 
+                             'High likelihood projects in development', 'Proposals out for decision',
+                             'Negotiating', 'Contracting'],
+        'Identified Income': ['Medium likelihood projects in development', 'High likelihood projects in development',
+                             'Proposals out for decision', 'Negotiating', 'Contracting'],
+        'Proposals': ['Proposals out for decision', 'Negotiating', 'Contracting'],
+        'Negotiating': ['Negotiating', 'Contracting'],
+        'Contracting': ['Contracting']
+    }
+    
+    funnel_data = []
+    
+    for stage_name, included_clusters in funnel_stages.items():
+        total_value = 0
+        weighted_value = 0
+        
+        for _, opp in pipeline_data.iterrows():
+            opp_name = opp['opportunity_name']
+            
+            # Skip if opportunity is toggled off
+            if opp_name not in active_opportunities or not active_opportunities[opp_name]:
+                continue
+            
+            cluster = opp.get('cluster', '')
+            
+            # Skip if cluster not in this stage
+            if cluster not in included_clusters:
+                continue
+            
+            probability = probabilities.get(cluster, 0) / 100
+            
+            # Sum income across selected months
+            for month_label in month_range:
+                income_col = f"{month_label}_income"
+                income = float(opp.get(income_col, 0)) if pd.notna(opp.get(income_col, 0)) else 0
+                total_value += income
+                weighted_value += income * probability
+        
+        funnel_data.append({
+            'stage': stage_name,
+            'total_value': total_value,
+            'weighted_value': weighted_value
+        })
+    
+    return pd.DataFrame(funnel_data)
 
 def get_month_label(month_index):
     """Convert month index to label like Jan_2026"""
@@ -623,6 +690,93 @@ if not pipeline_data.empty:
             first_breach if first_breach else "None"
         )
     
+    # Pipeline Funnel
+    st.markdown("---")
+    st.subheader("Pipeline Funnel Analysis")
+    
+    # Funnel filter
+    funnel_col1, funnel_col2 = st.columns([1, 3])
+    
+    with funnel_col1:
+        funnel_months = st.selectbox(
+            "Time Period",
+            options=[6, 12, 18],
+            format_func=lambda x: f"Next {x} months",
+            index=2  # Default to 18 months
+        )
+    
+    with funnel_col2:
+        st.markdown("*Shows total pipeline value and probability-weighted value at each stage (excludes Secured income)*")
+    
+    # Calculate funnel data
+    funnel_df = calculate_pipeline_funnel(
+        pipeline_data,
+        st.session_state.probabilities,
+        st.session_state.opportunity_toggles,
+        funnel_months
+    )
+    
+    # Create funnel visualization
+    fig_funnel = go.Figure()
+    
+    # Add bars for total value
+    fig_funnel.add_trace(go.Bar(
+        y=funnel_df['stage'],
+        x=funnel_df['total_value'],
+        name='Total Value',
+        orientation='h',
+        marker=dict(color='#93c5fd'),
+        text=funnel_df['total_value'].apply(lambda x: f'£{x:,.0f}'),
+        textposition='inside',
+        textfont=dict(size=12)
+    ))
+    
+    # Add bars for weighted value
+    fig_funnel.add_trace(go.Bar(
+        y=funnel_df['stage'],
+        x=funnel_df['weighted_value'],
+        name='Probability-Weighted Value',
+        orientation='h',
+        marker=dict(color='#2563eb'),
+        text=funnel_df['weighted_value'].apply(lambda x: f'£{x:,.0f}'),
+        textposition='inside',
+        textfont=dict(size=12, color='white')
+    ))
+    
+    fig_funnel.update_layout(
+        barmode='overlay',
+        height=350,
+        xaxis_title="Value (£)",
+        yaxis_title="Pipeline Stage",
+        xaxis=dict(tickformat='£,.0f'),
+        yaxis=dict(autorange='reversed'),  # Top to bottom
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    st.plotly_chart(fig_funnel, use_container_width=True)
+    
+    # Funnel summary table
+    st.markdown("**Pipeline Funnel Summary**")
+    funnel_display = funnel_df.copy()
+    funnel_display['Conversion Rate'] = (funnel_display['weighted_value'] / funnel_display['total_value'] * 100).apply(lambda x: f"{x:.1f}%")
+    funnel_display['Total Value'] = funnel_display['total_value'].apply(lambda x: f'£{x:,.0f}')
+    funnel_display['Weighted Value'] = funnel_display['weighted_value'].apply(lambda x: f'£{x:,.0f}')
+    funnel_display = funnel_display[['stage', 'Total Value', 'Weighted Value', 'Conversion Rate']]
+    funnel_display.columns = ['Stage', 'Total Value', 'Weighted Value', 'Conversion Rate']
+    
+    st.dataframe(
+        funnel_display,
+        use_container_width=True,
+        hide_index=True
+    )
+    
     # Reserve Levels Forecast Chart
     st.markdown("---")
     st.subheader("Reserve Levels Forecast (18 Months)")
@@ -809,14 +963,25 @@ Create a multi-sheet Excel (.xlsx) file where each sheet represents one opportun
 - **Row 6, starting Column B:** Expense values for each month
 
 **Valid Clusters:** 
-- Secured income
+- Secured income (100% - excluded from funnel, already secured)
+- Contracting (100%)
+- Negotiating (90%)
 - Proposals out for decision
 - High likelihood projects in development
 - Medium likelihood projects in development
 - Ideas at development stage
 
+**Pipeline Funnel Stages:**
+1. **All Opportunities** - All pipeline items except Secured income
+2. **Identified Income** - Medium/High likelihood + Proposals + Negotiating + Contracting
+3. **Proposals** - Proposals out for decision + Negotiating + Contracting
+4. **Negotiating** - Negotiating + Contracting
+5. **Contracting** - Contracting only
+
 **New Features:**
 - **Toggle Opportunities:** Turn individual projects on/off in the model
 - **Reserve Deposits:** Add up to 4 one-time deposits to unrestricted reserves
 - **Cost Changes:** Specify up to 4 changes to fixed costs throughout the forecast period
+- **Special Projects:** Enable additional monthly costs that reduce unrestricted reserves
+- **Pipeline Funnel:** Visualize pipeline value at each stage with total and weighted values
 """)
