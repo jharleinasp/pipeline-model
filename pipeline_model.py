@@ -253,7 +253,7 @@ def get_fixed_costs_for_month(month_label, cost_changes):
     sorted_changes = sorted(cost_changes, key=lambda x: get_month_index(x['month']))
     
     # Find the most recent cost change that applies to this month
-    applicable_costs = {'staff': 49000, 'backoffice': 12000}  # defaults
+    applicable_costs = {'staff': 45000, 'backoffice': 10500}  # defaults
     
     for change in sorted_changes:
         change_idx = get_month_index(change['month'])
@@ -389,14 +389,14 @@ with col1:
     
     unrestricted_reserves = st.number_input(
         "Unrestricted Reserves (£)",
-        value=205500,
+        value=360455,
         step=1000,
         format="%d"
     )
     
     total_funds = st.number_input(
         "Total Funds (£)",
-        value=363600,
+        value=404445,
         step=1000,
         format="%d",
         help="Unrestricted reserves + Restricted funds held"
@@ -410,7 +410,7 @@ with col1:
     
     base_fixed_staff_costs = st.number_input(
         "Fixed Staff Costs (£/month)",
-        value=49000,
+        value=45000,
         step=1000,
         format="%d",
         help="Base monthly salary bill"
@@ -418,7 +418,7 @@ with col1:
     
     base_fixed_backoffice_costs = st.number_input(
         "Fixed Back Office Costs (£/month)",
-        value=12000,
+        value=10500,
         step=1000,
         format="%d",
         help="Base monthly overhead costs"
