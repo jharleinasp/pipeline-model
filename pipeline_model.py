@@ -92,12 +92,29 @@ scenario_presets = {
     }
 }
 
-# Month list for dropdowns
-MONTH_LIST = [
+# Available start months for the picker
+_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+START_MONTH_OPTIONS = [
     'Jan_2026', 'Feb_2026', 'Mar_2026', 'Apr_2026', 'May_2026', 'Jun_2026',
     'Jul_2026', 'Aug_2026', 'Sep_2026', 'Oct_2026', 'Nov_2026', 'Dec_2026',
     'Jan_2027', 'Feb_2027', 'Mar_2027', 'Apr_2027', 'May_2027', 'Jun_2027'
 ]
+
+def generate_month_list(start_month_str):
+    """Generate 18-month list starting from the given month e.g. 'May_2026'"""
+    month_name, year = start_month_str.split('_')
+    year = int(year)
+    start_idx = _MONTH_NAMES.index(month_name)
+    months = []
+    for i in range(18):
+        m = (start_idx + i) % 12
+        y = year + (start_idx + i) // 12
+        months.append(f"{_MONTH_NAMES[m]}_{y}")
+    return months
+
+# Default month list — overridden by user selection at runtime
+MONTH_LIST = generate_month_list('Jan_2026')
 
 def parse_excel_pipeline(excel_file):
     """Parse multi-sheet Excel file with opportunities"""
@@ -229,14 +246,10 @@ def calculate_pipeline_funnel(pipeline_data, probabilities, active_opportunities
     return pd.DataFrame(funnel_data)
 
 def get_month_label(month_index):
-    """Convert month index to label like Jan_2026"""
-    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    
-    # Start from January 2026 (month 0 of year 2026)
-    year = 2026 + (month_index - 1) // 12
-    month = (month_index - 1) % 12
-    
-    return f"{month_names[month]}_{year}"
+    """Convert month index (1-18) to label using the current dynamic MONTH_LIST"""
+    if 1 <= month_index <= len(MONTH_LIST):
+        return MONTH_LIST[month_index - 1]
+    return f"Month_{month_index}"
 
 def get_month_index(month_label):
     """Convert month label like Jan_2026 to index (1-18)"""
@@ -379,6 +392,20 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
         })
     
     return pd.DataFrame(forecast)
+
+# Model start month selector
+st.markdown("---")
+_start_col, _ = st.columns([1, 2])
+with _start_col:
+    _default_idx = START_MONTH_OPTIONS.index("May_2026") if "May_2026" in START_MONTH_OPTIONS else 0
+    selected_start_month = st.selectbox(
+        "📅 Model Start Month",
+        options=START_MONTH_OPTIONS,
+        index=_default_idx,
+        help="Data before this month is ignored. The 18-month forecast runs from this month forward."
+    )
+# Rebuild MONTH_LIST from the selected start month
+MONTH_LIST = generate_month_list(selected_start_month)
 
 # Three-column layout
 col1, col2, col3 = st.columns(3)
@@ -957,7 +984,7 @@ Create a multi-sheet Excel (.xlsx) file where each sheet represents one opportun
 **Each sheet structure:**
 - **Cell A1:** Opportunity name (e.g., "Project Alpha")
 - **Cell A2:** Cluster name (e.g., "Secured income")
-- **Row 3, starting Column B:** Month headers (Jan_2026, Feb_2026, Mar_2026, ... Jun_2027)
+- **Row 3, starting Column B:** Month headers matching your pipeline (e.g. Jan_2026, Feb_2026 ... covering 18 months from your selected start month)
 - **Row 4, starting Column B:** Income values for each month
 - **Row 5, starting Column B:** Staff cost values for each month
 - **Row 6, starting Column B:** Expense values for each month
