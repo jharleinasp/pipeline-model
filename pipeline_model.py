@@ -98,7 +98,8 @@ _MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 START_MONTH_OPTIONS = [
     'Jan_2026', 'Feb_2026', 'Mar_2026', 'Apr_2026', 'May_2026', 'Jun_2026',
     'Jul_2026', 'Aug_2026', 'Sep_2026', 'Oct_2026', 'Nov_2026', 'Dec_2026',
-    'Jan_2027', 'Feb_2027', 'Mar_2027', 'Apr_2027', 'May_2027', 'Jun_2027'
+    'Jan_2027', 'Feb_2027', 'Mar_2027', 'Apr_2027', 'May_2027', 'Jun_2027',
+    'Jul_2027', 'Aug_2027', 'Sep_2027', 'Oct_2027', 'Nov_2027', 'Dec_2027'
 ]
 
 def generate_month_list(start_month_str):
@@ -416,14 +417,14 @@ with col1:
     
     unrestricted_reserves = st.number_input(
         "Unrestricted Reserves (£)",
-        value=360455,
+        value=100000,
         step=1000,
         format="%d"
     )
     
     total_funds = st.number_input(
         "Total Funds (£)",
-        value=404445,
+        value=100000,
         step=1000,
         format="%d",
         help="Unrestricted reserves + Restricted funds held"
