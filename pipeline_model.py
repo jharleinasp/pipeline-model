@@ -455,11 +455,11 @@ with col1:
     st.markdown(f"**Total Base Fixed Costs:** £{(base_fixed_staff_costs + base_fixed_backoffice_costs):,.0f}/month")
     
     # Cost changes
-    with st.expander("💰 Fixed Cost Changes (up to 4)"):
+    with st.expander("💰 Fixed Cost Changes (up to 12)"):
         st.markdown("**Specify changes to fixed costs from specific months:**")
         cost_changes = []
         
-        for i in range(4):
+        for i in range(12):
             col_month, col_staff, col_office = st.columns(3)
             
             with col_month:
