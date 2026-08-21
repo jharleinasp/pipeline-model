@@ -640,23 +640,34 @@ with col1:
     special_projects_costs = []
 
     if enable_special_projects:
-        with st.expander("🔧 Special Projects Costs (monthly)"):
+        with st.expander("🔧 Special Projects Costs (up to 12)"):
             st.markdown("**Specify additional monthly costs for special projects:**")
 
-            for month_label in MONTH_LIST:
-                sp_cost = st.number_input(
-                    f"{month_label}",
-                    value=0,
-                    step=1000,
-                    format="%d",
-                    key=f"special_{month_label}"
-                )
+            for i in range(12):
+                col_month, col_amount = st.columns(2)
 
-                if sp_cost > 0:
-                    special_projects_costs.append({
-                        'month': month_label,
-                        'amount': sp_cost
-                    })
+                with col_month:
+                    sp_month = st.selectbox(
+                        f"Month {i+1}",
+                        options=['None'] + MONTH_LIST,
+                        key=f"special_month_{i}"
+                    )
+
+                if sp_month != 'None':
+                    with col_amount:
+                        sp_amount = st.number_input(
+                            "Amount (£)",
+                            value=0,
+                            step=1000,
+                            format="%d",
+                            key=f"special_amount_{i}"
+                        )
+
+                    if sp_amount > 0:
+                        special_projects_costs.append({
+                            'month': sp_month,
+                            'amount': sp_amount
+                        })
 
     st.markdown("---")
 
@@ -859,16 +870,29 @@ if not pipeline_data.empty:
         hide_index=True
     )
 
+    # Trim the forward-looking charts/table to start at the current calendar
+    # month rather than the (possibly earlier/historical) first month of the
+    # modelled range, which comes from the uploaded pipeline data
+    _today = datetime.now()
+    _current_month_label = f"{_MONTH_NAMES[_today.month - 1]}_{_today.year}"
+    try:
+        _chart_start_month_idx = MONTH_LIST.index(_current_month_label) + 1
+    except ValueError:
+        _chart_start_month_idx = 1  # current month isn't in the modelled range — show it all
+
+    chart_df = forecast_df[(forecast_df['month'] == 0) | (forecast_df['month'] >= _chart_start_month_idx)].copy()
+    _chart_month_count = (chart_df['month'] > 0).sum()
+
     # Reserve Levels Forecast Chart
     st.markdown("---")
-    st.subheader("Reserve Levels Forecast (18 Months)")
+    st.subheader(f"Reserve Levels Forecast (Next {_chart_month_count} Months)")
 
     fig = go.Figure()
 
     # Add unrestricted reserves line
     fig.add_trace(go.Scatter(
-        x=forecast_df['monthLabel'],
-        y=forecast_df['unrestrictedReserves'],
+        x=chart_df['monthLabel'],
+        y=chart_df['unrestrictedReserves'],
         mode='lines+markers',
         name='Unrestricted Reserves',
         line=dict(color='#2563eb', width=3),
@@ -878,8 +902,8 @@ if not pipeline_data.empty:
     # Add unrestricted after special projects line if enabled
     if enable_special_projects:
         fig.add_trace(go.Scatter(
-            x=forecast_df['monthLabel'],
-            y=forecast_df['unrestrictedAfterSpecial'],
+            x=chart_df['monthLabel'],
+            y=chart_df['unrestrictedAfterSpecial'],
             mode='lines+markers',
             name='Unrestricted After Special Projects',
             line=dict(color='#f59e0b', width=2, dash='dot'),
@@ -888,8 +912,8 @@ if not pipeline_data.empty:
 
     # Add total funds line
     fig.add_trace(go.Scatter(
-        x=forecast_df['monthLabel'],
-        y=forecast_df['totalFunds'],
+        x=chart_df['monthLabel'],
+        y=chart_df['totalFunds'],
         mode='lines+markers',
         name='Total Funds',
         line=dict(color='#10b981', width=2, dash='dash'),
@@ -922,7 +946,7 @@ if not pipeline_data.empty:
     fig2 = go.Figure()
 
     # Filter out month 0
-    recovery_df = forecast_df[forecast_df['month'] > 0].copy()
+    recovery_df = chart_df[chart_df['month'] > 0].copy()
 
     fig2.add_trace(go.Bar(
         x=recovery_df['monthLabel'],
@@ -973,7 +997,7 @@ if not pipeline_data.empty:
     st.subheader("Detailed Monthly Breakdown")
 
     # Prepare display dataframe
-    display_df = forecast_df[forecast_df['month'] > 0].copy()
+    display_df = chart_df[chart_df['month'] > 0].copy()
 
     # Select columns based on whether special projects is enabled
     if enable_special_projects:
