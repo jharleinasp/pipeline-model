@@ -59,7 +59,7 @@ if 'opportunity_toggles' not in st.session_state:
 
 # Header
 st.title("Financial Pipeline Modelling Tool")
-st.markdown("*18-month scenario planning with staff cost recovery and reserve management*")
+st.markdown("*Scenario planning with staff cost recovery and reserve management*")
 
 # Scenario presets
 scenario_presets = {
@@ -94,20 +94,29 @@ scenario_presets = {
 
 _MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-def generate_month_list(start_month_str):
-    """Generate 18-month list starting from the given month e.g. 'May_2026'"""
+def generate_month_list(start_month_str, num_months=18):
+    """Generate a list of `num_months` months starting from the given month e.g. 'May_2026'"""
     month_name, year = start_month_str.split('_')
     year = int(year)
     start_idx = _MONTH_NAMES.index(month_name)
     months = []
-    for i in range(18):
+    for i in range(num_months):
         m = (start_idx + i) % 12
         y = year + (start_idx + i) // 12
         months.append(f"{_MONTH_NAMES[m]}_{y}")
     return months
 
-# Default month list — overridden below once the pipeline data has been read,
-# so it starts from the first month actually present in the uploaded spreadsheet
+def months_between(start_label, end_label):
+    """Number of months from start_label to end_label inclusive, e.g. Jan_2026 -> Mar_2026 = 3"""
+    start_name, start_year = start_label.split('_')
+    end_name, end_year = end_label.split('_')
+    start_idx = _MONTH_NAMES.index(start_name)
+    end_idx = _MONTH_NAMES.index(end_name)
+    return (int(end_year) - int(start_year)) * 12 + (end_idx - start_idx) + 1
+
+# Default month list — overridden below once the pipeline data has been read, so it
+# spans from the current month through the last month actually present in the
+# uploaded spreadsheet
 MONTH_LIST = generate_month_list('Jan_2026')
 
 def parse_excel_pipeline(excel_file):
@@ -180,13 +189,16 @@ def parse_excel_pipeline(excel_file):
 
     return pd.DataFrame(all_opportunities)
 
-def detect_start_month_from_pipeline(pipeline_data):
-    """Find the earliest month (e.g. 'Mar_2026') present in the uploaded pipeline data."""
+def detect_month_range_from_pipeline(pipeline_data):
+    """Find the earliest and latest month (e.g. 'Mar_2026', 'Jun_2027') present in the
+    uploaded pipeline data. Returns (start_label, end_label), or (None, None) if empty."""
     if pipeline_data is None or pipeline_data.empty:
-        return None
+        return None, None
 
     earliest_key = None
     earliest_label = None
+    latest_key = None
+    latest_label = None
 
     for col in pipeline_data.columns:
         month_label = None
@@ -212,8 +224,11 @@ def detect_start_month_from_pipeline(pipeline_data):
         if earliest_key is None or key < earliest_key:
             earliest_key = key
             earliest_label = month_label
+        if latest_key is None or key > latest_key:
+            latest_key = key
+            latest_label = month_label
 
-    return earliest_label
+    return earliest_label, latest_label
 
 def calculate_pipeline_funnel(pipeline_data, probabilities, active_opportunities, months_filter):
     """Calculate pipeline funnel values for visualization"""
@@ -223,7 +238,7 @@ def calculate_pipeline_funnel(pipeline_data, probabilities, active_opportunities
         month_range = MONTH_LIST[:6]
     elif months_filter == 12:
         month_range = MONTH_LIST[:12]
-    else:  # 18 months
+    else:  # full modelled range
         month_range = MONTH_LIST
 
     # Define funnel stages and their cluster mappings
@@ -275,13 +290,13 @@ def calculate_pipeline_funnel(pipeline_data, probabilities, active_opportunities
     return pd.DataFrame(funnel_data)
 
 def get_month_label(month_index):
-    """Convert month index (1-18) to label using the current dynamic MONTH_LIST"""
+    """Convert a 1-based month index to its label using the current dynamic MONTH_LIST"""
     if 1 <= month_index <= len(MONTH_LIST):
         return MONTH_LIST[month_index - 1]
     return f"Month_{month_index}"
 
 def get_month_index(month_label):
-    """Convert month label like Jan_2026 to index (1-18)"""
+    """Convert month label like Jan_2026 to its 1-based index in MONTH_LIST"""
     try:
         return MONTH_LIST.index(month_label) + 1
     except ValueError:
@@ -308,8 +323,8 @@ def get_fixed_costs_for_month(month_label, cost_changes):
 def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_funds_start,
                       base_staff, base_backoffice, reserve_deposits, cost_changes, active_opportunities,
                       special_projects_costs):
-    """Calculate 18-month financial forecast with staff cost recovery"""
-    months = 18
+    """Calculate financial forecast with staff cost recovery, for as many months as MONTH_LIST covers"""
+    months = len(MONTH_LIST)
     forecast = []
 
     # Calculate static restricted funds
@@ -325,7 +340,7 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
         'totalFunds': total_funds_start
     })
 
-    # Months 1-18
+    # Remaining months, per MONTH_LIST
     for month in range(1, months + 1):
         month_label = get_month_label(month)
 
@@ -496,24 +511,29 @@ with col2:
             st.session_state.scenario = 'optimistic'
             st.rerun()
 
-# Determine the model start month automatically: the earliest month present
-# in the uploaded pipeline data, rather than a fixed default like Jan 2026
-detected_start_month = detect_start_month_from_pipeline(pipeline_data)
+# Determine the model's month range automatically from the uploaded pipeline data:
+# it spans from the earliest month found in the data through the latest month found,
+# so the charts (which separately trim their start to the current month) can run
+# all the way to the end of whatever period your data covers
+detected_start_month, detected_end_month = detect_month_range_from_pipeline(pipeline_data)
 
-if detected_start_month:
+if detected_start_month and detected_end_month:
+    num_months = max(1, months_between(detected_start_month, detected_end_month))
     start_month_placeholder.markdown(
-        f"📅 **Model Start Month:** **{detected_start_month.replace('_', ' ')}** "
-        "— automatically detected as the first month in your uploaded pipeline data."
+        f"📅 **Model Period:** **{detected_start_month.replace('_', ' ')}** to "
+        f"**{detected_end_month.replace('_', ' ')}** ({num_months} months) — automatically "
+        "detected from your uploaded pipeline data."
     )
 else:
     detected_start_month = f"{_MONTH_NAMES[datetime.now().month - 1]}_{datetime.now().year}"
+    num_months = 18
     start_month_placeholder.markdown(
-        f"📅 **Model Start Month:** _{detected_start_month.replace('_', ' ')}_ "
-        "(placeholder — upload a pipeline file and this will switch to the first month in your data)."
+        f"📅 **Model Period:** _{detected_start_month.replace('_', ' ')} onward ({num_months} months)_ "
+        "(placeholder — upload a pipeline file and this will switch to the range found in your data)."
     )
 
-# Rebuild MONTH_LIST from the detected start month
-MONTH_LIST = generate_month_list(detected_start_month)
+# Rebuild MONTH_LIST to span the detected range
+MONTH_LIST = generate_month_list(detected_start_month, num_months)
 
 # Column 1: Current Financial Position
 with col1:
@@ -880,8 +900,11 @@ if not pipeline_data.empty:
     except ValueError:
         _chart_start_month_idx = 1  # current month isn't in the modelled range — show it all
 
-    chart_df = forecast_df[(forecast_df['month'] == 0) | (forecast_df['month'] >= _chart_start_month_idx)].copy()
-    _chart_month_count = (chart_df['month'] > 0).sum()
+    # Exclude the 'Current' (month 0) snapshot row here so every chart/table
+    # consistently starts at the real current-month label (e.g. 'Aug_2026'),
+    # instead of sometimes showing an extra 'Current' point before it
+    chart_df = forecast_df[forecast_df['month'] >= _chart_start_month_idx].copy()
+    _chart_month_count = len(chart_df)
 
     # Reserve Levels Forecast Chart
     st.markdown("---")
@@ -1063,7 +1086,7 @@ Create a multi-sheet Excel (.xlsx) file where each sheet represents one opportun
 **Each sheet structure:**
 - **Cell A1:** Opportunity name (e.g., "Project Alpha")
 - **Cell A2:** Cluster name (e.g., "Secured income")
-- **Row 3, starting Column B:** Month headers matching your pipeline (e.g. Jan_2026, Feb_2026 ... covering 18 months). The model's start month is set automatically to the earliest month found across your data.
+- **Row 3, starting Column B:** Month headers matching your pipeline (e.g. Jan_2026, Feb_2026 ...). The model's period is set automatically from the earliest to the latest month found across your data — the charts and monthly breakdown then run from the current month through the end of that period.
 - **Row 4, starting Column B:** Income values for each month
 - **Row 5, starting Column B:** Staff cost values for each month
 - **Row 6, starting Column B:** Expense values for each month
