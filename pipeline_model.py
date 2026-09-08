@@ -511,29 +511,35 @@ with col2:
             st.session_state.scenario = 'optimistic'
             st.rerun()
 
-# Determine the model's month range automatically from the uploaded pipeline data:
-# it spans from the earliest month found in the data through the latest month found,
-# so the charts (which separately trim their start to the current month) can run
-# all the way to the end of whatever period your data covers
+# Determine the model's month range automatically. MONTH_LIST always starts at the
+# CURRENT calendar month — never at the (possibly historical) earliest month found in
+# the uploaded data — because calculate_forecast() walks MONTH_LIST from month 1 and
+# accumulates it onto today's actual reserves. If MONTH_LIST started earlier than today,
+# the model would silently replay months that have already happened on top of a starting
+# balance that already reflects them, understating (or overstating) every later month.
+# It runs through the latest month found in the uploaded data.
+current_month_label = f"{_MONTH_NAMES[datetime.now().month - 1]}_{datetime.now().year}"
 detected_start_month, detected_end_month = detect_month_range_from_pipeline(pipeline_data)
 
 if detected_start_month and detected_end_month:
-    num_months = max(1, months_between(detected_start_month, detected_end_month))
+    num_months = months_between(current_month_label, detected_end_month)
+    if num_months < 1:
+        num_months = 1  # all uploaded data is already in the past — just show the current month
     start_month_placeholder.markdown(
-        f"📅 **Model Period:** **{detected_start_month.replace('_', ' ')}** to "
-        f"**{detected_end_month.replace('_', ' ')}** ({num_months} months) — automatically "
-        "detected from your uploaded pipeline data."
+        f"📅 **Model Period:** **{current_month_label.replace('_', ' ')}** to "
+        f"**{detected_end_month.replace('_', ' ')}** ({num_months} months) — runs from the "
+        f"current month through the last month found in your uploaded pipeline data "
+        f"(which covers {detected_start_month.replace('_', ' ')} to {detected_end_month.replace('_', ' ')})."
     )
 else:
-    detected_start_month = f"{_MONTH_NAMES[datetime.now().month - 1]}_{datetime.now().year}"
     num_months = 18
     start_month_placeholder.markdown(
-        f"📅 **Model Period:** _{detected_start_month.replace('_', ' ')} onward ({num_months} months)_ "
+        f"📅 **Model Period:** _{current_month_label.replace('_', ' ')} onward ({num_months} months)_ "
         "(placeholder — upload a pipeline file and this will switch to the range found in your data)."
     )
 
-# Rebuild MONTH_LIST to span the detected range
-MONTH_LIST = generate_month_list(detected_start_month, num_months)
+# Rebuild MONTH_LIST to run from the current month through the end of the detected range
+MONTH_LIST = generate_month_list(current_month_label, num_months)
 
 # Column 1: Current Financial Position
 with col1:
@@ -890,32 +896,24 @@ if not pipeline_data.empty:
         hide_index=True
     )
 
-    # Trim the forward-looking charts/table to start at the current calendar
-    # month rather than the (possibly earlier/historical) first month of the
-    # modelled range, which comes from the uploaded pipeline data
-    _today = datetime.now()
-    _current_month_label = f"{_MONTH_NAMES[_today.month - 1]}_{_today.year}"
-    try:
-        _chart_start_month_idx = MONTH_LIST.index(_current_month_label) + 1
-    except ValueError:
-        _chart_start_month_idx = 1  # current month isn't in the modelled range — show it all
+    # MONTH_LIST already starts at the current calendar month (see above), so month 1
+    # of forecast_df IS the current month — just drop the 'Current' (month 0) baseline
+    # snapshot row so the chart/table don't show an extra point before the real first month
+    chart_df = forecast_df[forecast_df['month'] > 0].copy()
 
-    # Exclude the 'Current' (month 0) snapshot row here so every chart/table
-    # consistently starts at the real current-month label (e.g. 'Aug_2026'),
-    # instead of sometimes showing an extra 'Current' point before it
-    chart_df = forecast_df[forecast_df['month'] >= _chart_start_month_idx].copy()
-    _chart_month_count = len(chart_df)
+    # Reserve Levels Forecast Chart — uses the same "Next N months" window as the
+    # Pipeline Funnel Analysis above, so the two stay in sync
+    reserve_chart_df = chart_df[chart_df['month'] <= funnel_months].copy()
 
-    # Reserve Levels Forecast Chart
     st.markdown("---")
-    st.subheader(f"Reserve Levels Forecast (Next {_chart_month_count} Months)")
+    st.subheader(f"Reserve Levels Forecast (Next {len(reserve_chart_df)} Months)")
 
     fig = go.Figure()
 
     # Add unrestricted reserves line
     fig.add_trace(go.Scatter(
-        x=chart_df['monthLabel'],
-        y=chart_df['unrestrictedReserves'],
+        x=reserve_chart_df['monthLabel'],
+        y=reserve_chart_df['unrestrictedReserves'],
         mode='lines+markers',
         name='Unrestricted Reserves',
         line=dict(color='#2563eb', width=3),
@@ -925,8 +923,8 @@ if not pipeline_data.empty:
     # Add unrestricted after special projects line if enabled
     if enable_special_projects:
         fig.add_trace(go.Scatter(
-            x=chart_df['monthLabel'],
-            y=chart_df['unrestrictedAfterSpecial'],
+            x=reserve_chart_df['monthLabel'],
+            y=reserve_chart_df['unrestrictedAfterSpecial'],
             mode='lines+markers',
             name='Unrestricted After Special Projects',
             line=dict(color='#f59e0b', width=2, dash='dot'),
@@ -935,8 +933,8 @@ if not pipeline_data.empty:
 
     # Add total funds line
     fig.add_trace(go.Scatter(
-        x=chart_df['monthLabel'],
-        y=chart_df['totalFunds'],
+        x=reserve_chart_df['monthLabel'],
+        y=reserve_chart_df['totalFunds'],
         mode='lines+markers',
         name='Total Funds',
         line=dict(color='#10b981', width=2, dash='dash'),
@@ -1086,7 +1084,7 @@ Create a multi-sheet Excel (.xlsx) file where each sheet represents one opportun
 **Each sheet structure:**
 - **Cell A1:** Opportunity name (e.g., "Project Alpha")
 - **Cell A2:** Cluster name (e.g., "Secured income")
-- **Row 3, starting Column B:** Month headers matching your pipeline (e.g. Jan_2026, Feb_2026 ...). The model's period is set automatically from the earliest to the latest month found across your data — the charts and monthly breakdown then run from the current month through the end of that period.
+- **Row 3, starting Column B:** Month headers matching your pipeline (e.g. Jan_2026, Feb_2026 ...). The forecast always runs from the current month through the latest month found anywhere in your data, so any months in your spreadsheet that are already in the past are ignored by the model.
 - **Row 4, starting Column B:** Income values for each month
 - **Row 5, starting Column B:** Staff cost values for each month
 - **Row 6, starting Column B:** Expense values for each month
