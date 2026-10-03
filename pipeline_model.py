@@ -45,7 +45,7 @@ if 'probabilities' not in st.session_state:
         'Secured income': 100,
         'Contracting': 90,
         'Negotiating': 80,
-        'Proposals out for decision': 65,
+        'Proposals out for decision': 60,
         'High likelihood projects in development': 50,
         'Medium likelihood projects in development': 30,
         'Ideas at development stage': 15
@@ -70,14 +70,14 @@ scenario_presets = {
         'Proposals out for decision': 45,
         'High likelihood projects in development': 30,
         'Medium likelihood projects in development': 15,
-        'Ideas at development stage': 0
+        'Ideas at development stage': 5
     },
     'realistic': {
         'Secured income': 100,
         'Contracting': 90,
         'Negotiating': 80,
-        'Proposals out for decision': 65,
-        'High likelihood projects in development': 50,
+        'Proposals out for decision': 60,
+        'High likelihood projects in development': 40,
         'Medium likelihood projects in development': 25,
         'Ideas at development stage': 15
     },
@@ -86,7 +86,7 @@ scenario_presets = {
         'Contracting': 100,
         'Negotiating': 90,
         'Proposals out for decision': 75,
-        'High likelihood projects in development': 70,
+        'High likelihood projects in development': 50,
         'Medium likelihood projects in development': 35,
         'Ideas at development stage': 25
     }
