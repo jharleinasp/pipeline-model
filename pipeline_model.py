@@ -43,8 +43,8 @@ st.set_page_config(page_title="Financial Pipeline Modelling Tool", layout="wide"
 if 'probabilities' not in st.session_state:
     st.session_state.probabilities = {
         'Secured income': 100,
-        'Contracting': 100,
-        'Negotiating': 90,
+        'Contracting': 90,
+        'Negotiating': 80,
         'Proposals out for decision': 65,
         'High likelihood projects in development': 50,
         'Medium likelihood projects in development': 30,
@@ -65,29 +65,29 @@ st.markdown("*Scenario planning with staff cost recovery and reserve management*
 scenario_presets = {
     'conservative': {
         'Secured income': 100,
-        'Contracting': 100,
-        'Negotiating': 90,
+        'Contracting': 80,
+        'Negotiating': 70,
         'Proposals out for decision': 45,
         'High likelihood projects in development': 30,
         'Medium likelihood projects in development': 15,
-        'Ideas at development stage': 5
+        'Ideas at development stage': 0
     },
     'realistic': {
         'Secured income': 100,
-        'Contracting': 100,
-        'Negotiating': 90,
+        'Contracting': 90,
+        'Negotiating': 80,
         'Proposals out for decision': 65,
         'High likelihood projects in development': 50,
-        'Medium likelihood projects in development': 30,
+        'Medium likelihood projects in development': 25,
         'Ideas at development stage': 15
     },
     'optimistic': {
         'Secured income': 100,
         'Contracting': 100,
         'Negotiating': 90,
-        'Proposals out for decision': 85,
+        'Proposals out for decision': 75,
         'High likelihood projects in development': 70,
-        'Medium likelihood projects in development': 45,
+        'Medium likelihood projects in development': 35,
         'Ideas at development stage': 25
     }
 }
