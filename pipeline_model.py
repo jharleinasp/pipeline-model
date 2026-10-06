@@ -1,3 +1,4 @@
+e model · PY
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -43,11 +44,11 @@ st.set_page_config(page_title="Financial Pipeline Modelling Tool", layout="wide"
 if 'probabilities' not in st.session_state:
     st.session_state.probabilities = {
         'Secured income': 100,
-        'Contracting': 100,
-        'Negotiating': 90,
-        'Proposals out for decision': 65,
-        'High likelihood projects in development': 50,
-        'Medium likelihood projects in development': 30,
+        'Contracting': 90,
+        'Negotiating': 80,
+        'Proposals out for decision': 60,
+        'High likelihood projects in development': 40,
+        'Medium likelihood projects in development': 25,
         'Ideas at development stage': 15
     }
  
@@ -65,8 +66,8 @@ st.markdown("*Scenario planning with staff cost recovery and reserve management*
 scenario_presets = {
     'conservative': {
         'Secured income': 100,
-        'Contracting': 100,
-        'Negotiating': 90,
+        'Contracting': 80,
+        'Negotiating': 70,
         'Proposals out for decision': 45,
         'High likelihood projects in development': 30,
         'Medium likelihood projects in development': 15,
@@ -74,20 +75,20 @@ scenario_presets = {
     },
     'realistic': {
         'Secured income': 100,
-        'Contracting': 100,
-        'Negotiating': 90,
-        'Proposals out for decision': 65,
-        'High likelihood projects in development': 50,
-        'Medium likelihood projects in development': 30,
+        'Contracting': 90,
+        'Negotiating': 80,
+        'Proposals out for decision': 60,
+        'High likelihood projects in development': 40,
+        'Medium likelihood projects in development': 25,
         'Ideas at development stage': 15
     },
     'optimistic': {
         'Secured income': 100,
         'Contracting': 100,
         'Negotiating': 90,
-        'Proposals out for decision': 85,
-        'High likelihood projects in development': 70,
-        'Medium likelihood projects in development': 45,
+        'Proposals out for decision': 75,
+        'High likelihood projects in development': 50,
+        'Medium likelihood projects in development': 35,
         'Ideas at development stage': 25
     }
 }
@@ -302,21 +303,29 @@ def get_month_index(month_label):
     except ValueError:
         return 0
  
-def get_fixed_costs_for_month(month_label, cost_changes):
-    """Get the applicable fixed costs for a given month based on cost changes"""
+def get_fixed_costs_for_month(month_label, cost_changes, base_staff, base_backoffice):
+    """Get the fixed costs that apply in a given month.
+ 
+    Starts from the base fixed costs, then applies every cost change dated on or before
+    this month in date order. Each change 'sticks' until a later change overwrites it.
+    Staff and back office are carried forward independently: a change that leaves one
+    of them blank (None) keeps whatever value was already in force for that cost.
+    """
     month_idx = get_month_index(month_label)
  
-    # Sort cost changes by month index
+    # Sort cost changes by month index (stable sort, so for two changes in the same
+    # month the one entered lower down the list wins)
     sorted_changes = sorted(cost_changes, key=lambda x: get_month_index(x['month']))
  
-    # Find the most recent cost change that applies to this month
-    applicable_costs = {'staff': 45000, 'backoffice': 10500}  # defaults
+    applicable_costs = {'staff': base_staff, 'backoffice': base_backoffice}
  
     for change in sorted_changes:
         change_idx = get_month_index(change['month'])
         if change_idx > 0 and change_idx <= month_idx:
-            applicable_costs['staff'] = change['staff']
-            applicable_costs['backoffice'] = change['backoffice']
+            if change.get('staff') is not None:
+                applicable_costs['staff'] = change['staff']
+            if change.get('backoffice') is not None:
+                applicable_costs['backoffice'] = change['backoffice']
  
     return applicable_costs
  
@@ -354,7 +363,7 @@ def calculate_forecast(pipeline_data, probabilities, unrestricted_start, total_f
         month_label = get_month_label(month)
  
         # Get applicable fixed costs for this month
-        fixed_costs = get_fixed_costs_for_month(month_label, cost_changes)
+        fixed_costs = get_fixed_costs_for_month(month_label, cost_changes, base_staff, base_backoffice)
         fixed_staff = fixed_costs['staff']
         fixed_backoffice = fixed_costs['backoffice']
  
@@ -505,19 +514,19 @@ with col2:
  
     with col2a:
         if st.button("Conservative", use_container_width=True):
-            st.session_state.probabilities = scenario_presets['conservative']
+            st.session_state.probabilities = dict(scenario_presets['conservative'])
             st.session_state.scenario = 'conservative'
             st.rerun()
  
     with col2b:
         if st.button("Realistic", use_container_width=True):
-            st.session_state.probabilities = scenario_presets['realistic']
+            st.session_state.probabilities = dict(scenario_presets['realistic'])
             st.session_state.scenario = 'realistic'
             st.rerun()
  
     with col2c:
         if st.button("Optimistic", use_container_width=True):
-            st.session_state.probabilities = scenario_presets['optimistic']
+            st.session_state.probabilities = dict(scenario_presets['optimistic'])
             st.session_state.scenario = 'optimistic'
             st.rerun()
  
@@ -597,6 +606,10 @@ with col1:
     # Cost changes
     with st.expander("💰 Fixed Cost Changes (up to 12)"):
         st.markdown("**Specify changes to fixed costs from specific months:**")
+        st.caption(
+            "Each change applies from its month onwards and stays in place until a later "
+            "change overwrites it. Leave Staff or Back Office blank to keep that cost as it was."
+        )
         cost_changes = []
  
         for i in range(12):
@@ -613,26 +626,50 @@ with col1:
                 with col_staff:
                     new_staff = st.number_input(
                         "Staff (£)",
-                        value=base_fixed_staff_costs,
+                        value=None,
                         step=1000,
                         format="%d",
+                        placeholder="No change",
                         key=f"cost_staff_{i}"
                     )
  
                 with col_office:
                     new_office = st.number_input(
                         "Back Office (£)",
-                        value=base_fixed_backoffice_costs,
+                        value=None,
                         step=1000,
                         format="%d",
+                        placeholder="No change",
                         key=f"cost_office_{i}"
                     )
  
-                cost_changes.append({
-                    'month': change_month,
-                    'staff': new_staff,
-                    'backoffice': new_office
-                })
+                if new_staff is not None or new_office is not None:
+                    cost_changes.append({
+                        'month': change_month,
+                        'staff': new_staff,
+                        'backoffice': new_office
+                    })
+ 
+        # Show the resulting cost schedule so it's clear what applies when
+        if cost_changes:
+            st.markdown("**Resulting fixed costs:**")
+            schedule_lines = [
+                f"- From start: Staff £{base_fixed_staff_costs:,.0f}, "
+                f"Back Office £{base_fixed_backoffice_costs:,.0f}"
+            ]
+            change_months = sorted(
+                {c['month'] for c in cost_changes if get_month_index(c['month']) > 0},
+                key=get_month_index
+            )
+            for cm in change_months:
+                costs = get_fixed_costs_for_month(
+                    cm, cost_changes, base_fixed_staff_costs, base_fixed_backoffice_costs
+                )
+                schedule_lines.append(
+                    f"- From {cm.replace('_', ' ')}: Staff £{costs['staff']:,.0f}, "
+                    f"Back Office £{costs['backoffice']:,.0f}"
+                )
+            st.markdown("\n".join(schedule_lines))
  
     # Reserve deposits
     with st.expander("💵 Reserve Deposits (up to 4)"):
@@ -932,7 +969,7 @@ if not pipeline_data.empty:
         y=reserve_chart_df['totalFunds'],
         mode='lines+markers',
         name='Total Funds',
-        line=dict(color='#10b981', width=2, dash='dash'),
+        line=dict(color='#10b981', width=2),
         marker=dict(size=4)
     ))
  
@@ -1088,8 +1125,8 @@ Create a multi-sheet Excel (.xlsx) file where each sheet represents one opportun
  
 **Valid Clusters:**
 - Secured income (100% - excluded from funnel, already secured)
-- Contracting (100%)
-- Negotiating (90%)
+- Contracting
+- Negotiating
 - Proposals out for decision
 - High likelihood projects in development
 - Medium likelihood projects in development
